@@ -1,0 +1,147 @@
+name: Build and Validate
+
+on:
+  push:
+    branches: [ main, master, develop ]
+  pull_request:
+    branches: [ main, master ]
+  workflow_dispatch:  # Allow manual triggers
+
+jobs:
+  build:
+    runs-on: windows-latest  # Required for .NET Framework
+    
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v3
+    
+    - name: Setup MSBuild
+      uses: microsoft/setup-msbuild@v1.3
+      with:
+        msbuild-architecture: x64
+    
+    - name: Setup NuGet
+      uses: NuGet/setup-nuget@v1
+    
+    - name: Restore NuGet packages
+      run: nuget restore source/MyModelViewPresenter/MyModelViewPresenter.sln
+    
+    - name: Build Solution
+      run: msbuild source/MyModelViewPresenter/MyModelViewPresenter.sln /p:Configuration=Release /p:Platform="Any CPU"
+    
+    - name: Upload Build Artifacts
+      uses: actions/upload-artifact@v3
+      if: success()
+      with:
+        name: build-artifacts
+        path: |
+          source/MyModelViewPresenter/Web/bin/
+          source/MyModelViewPresenter/Web/App_Data/products.db
+        retention-days: 30
+    
+    - name: List Build Output
+      run: |
+        echo "=== Core Project Output ==="
+        if (Test-Path "source\MyModelViewPresenter\Core\bin\Release\") {
+          dir source\MyModelViewPresenter\Core\bin\Release\
+        } else {
+          echo "No Release build found for Core"
+        }
+        echo "=== Presentation Project Output ==="
+        if (Test-Path "source\MyModelViewPresenter\Presentation\bin\Release\") {
+          dir source\MyModelViewPresenter\Presentation\bin\Release\
+        } else {
+          echo "No Release build found for Presentation"
+        }
+        echo "=== Web Project Output ==="
+        if (Test-Path "source\MyModelViewPresenter\Web\bin\") {
+          dir source\MyModelViewPresenter\Web\bin\
+        } else {
+          echo "No bin folder found for Web"
+        }
+      shell: pwsh
+
+  validate:
+    runs-on: windows-latest
+    needs: build
+    
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v3
+    
+    - name: Validate Project Structure
+      run: |
+        echo "Validating project structure..."
+        
+        # Check if all required projects exist
+        $projects = @(
+          "source/MyModelViewPresenter/Core/Core.csproj",
+          "source/MyModelViewPresenter/Presentation/Presentation.csproj",
+          "source/MyModelViewPresenter/Web/Web.csproj"
+        )
+        
+        foreach ($project in $projects) {
+          if (Test-Path $project) {
+            Write-Host "✓ Found $project" -ForegroundColor Green
+          } else {
+            Write-Host "✗ Missing $project" -ForegroundColor Red
+            exit 1
+          }
+        }
+        
+        # Check for solution file
+        if (Test-Path "source/MyModelViewPresenter/MyModelViewPresenter.sln") {
+          Write-Host "✓ Found solution file" -ForegroundColor Green
+        } else {
+          Write-Host "✗ Missing solution file" -ForegroundColor Red
+          exit 1
+        }
+        
+        # Check for key Web files
+        $keyFiles = @(
+          "source/MyModelViewPresenter/Web/ProductManagement.aspx",
+          "source/MyModelViewPresenter/Web/Site.Master",
+          "source/MyModelViewPresenter/Web/Global.asax",
+          "source/MyModelViewPresenter/Web/Web.config"
+        )
+        
+        foreach ($file in $keyFiles) {
+          if (Test-Path $file) {
+            Write-Host "✓ Found $file" -ForegroundColor Green
+          } else {
+            Write-Host "✗ Missing $file" -ForegroundColor Red
+            # Don't fail on missing files, just warn
+            Write-Host "  Warning: This file should exist" -ForegroundColor Yellow
+          }
+        }
+        
+        # Check Core project structure
+        $coreDirs = @(
+          "source/MyModelViewPresenter/Core/Models",
+          "source/MyModelViewPresenter/Core/Repositories"
+        )
+        
+        foreach ($dir in $coreDirs) {
+          if (Test-Path $dir) {
+            Write-Host "✓ Found directory $dir" -ForegroundColor Green
+          } else {
+            Write-Host "✗ Missing directory $dir" -ForegroundColor Red
+          }
+        }
+        
+        # Check Presentation project structure
+        $presentationDirs = @(
+          "source/MyModelViewPresenter/Presentation/Infrastructure",
+          "source/MyModelViewPresenter/Presentation/Presenters",
+          "source/MyModelViewPresenter/Presentation/Repositories",
+          "source/MyModelViewPresenter/Presentation/Views"
+        )
+        
+        foreach ($dir in $presentationDirs) {
+          if (Test-Path $dir) {
+            Write-Host "✓ Found directory $dir" -ForegroundColor Green
+          } else {
+            Write-Host "✗ Missing directory $dir" -ForegroundColor Red
+          }
+        }
+      shell: pwsh
