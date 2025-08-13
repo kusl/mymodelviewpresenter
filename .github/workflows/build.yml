@@ -13,15 +13,15 @@ jobs:
     
     steps:
     - name: Checkout code
-      uses: actions/checkout@v3
+      uses: actions/checkout@v4
     
     - name: Setup MSBuild
-      uses: microsoft/setup-msbuild@v1.3
+      uses: microsoft/setup-msbuild@v2
       with:
         msbuild-architecture: x64
     
     - name: Setup NuGet
-      uses: NuGet/setup-nuget@v1
+      uses: NuGet/setup-nuget@v2
     
     - name: Restore NuGet packages
       run: nuget restore source/MyModelViewPresenter/MyModelViewPresenter.sln
@@ -30,7 +30,7 @@ jobs:
       run: msbuild source/MyModelViewPresenter/MyModelViewPresenter.sln /p:Configuration=Release /p:Platform="Any CPU"
     
     - name: Upload Build Artifacts
-      uses: actions/upload-artifact@v3
+      uses: actions/upload-artifact@v4
       if: success()
       with:
         name: build-artifacts
@@ -46,6 +46,12 @@ jobs:
           dir source\MyModelViewPresenter\Core\bin\Release\
         } else {
           echo "No Release build found for Core"
+        }
+        echo "=== Infrastructure Project Output ==="
+        if (Test-Path "source\MyModelViewPresenter\Infrastructure\bin\Release\") {
+          dir source\MyModelViewPresenter\Infrastructure\bin\Release\
+        } else {
+          echo "No Release build found for Infrastructure"
         }
         echo "=== Presentation Project Output ==="
         if (Test-Path "source\MyModelViewPresenter\Presentation\bin\Release\") {
@@ -67,7 +73,7 @@ jobs:
     
     steps:
     - name: Checkout code
-      uses: actions/checkout@v3
+      uses: actions/checkout@v4
     
     - name: Validate Project Structure
       run: |
@@ -76,6 +82,7 @@ jobs:
         # Check if all required projects exist
         $projects = @(
           "source/MyModelViewPresenter/Core/Core.csproj",
+          "source/MyModelViewPresenter/Infrastructure/Infrastructure.csproj",
           "source/MyModelViewPresenter/Presentation/Presentation.csproj",
           "source/MyModelViewPresenter/Web/Web.csproj"
         )
@@ -110,7 +117,6 @@ jobs:
             Write-Host "✓ Found $file" -ForegroundColor Green
           } else {
             Write-Host "✗ Missing $file" -ForegroundColor Red
-            # Don't fail on missing files, just warn
             Write-Host "  Warning: This file should exist" -ForegroundColor Yellow
           }
         }
@@ -118,10 +124,24 @@ jobs:
         # Check Core project structure
         $coreDirs = @(
           "source/MyModelViewPresenter/Core/Models",
-          "source/MyModelViewPresenter/Core/Repositories"
+          "source/MyModelViewPresenter/Core/Repositories",
+          "source/MyModelViewPresenter/Core/Services"
         )
         
         foreach ($dir in $coreDirs) {
+          if (Test-Path $dir) {
+            Write-Host "✓ Found directory $dir" -ForegroundColor Green
+          } else {
+            Write-Host "✗ Missing directory $dir" -ForegroundColor Red
+          }
+        }
+        
+        # Check Infrastructure project structure
+        $infrastructureDirs = @(
+          "source/MyModelViewPresenter/Infrastructure/Repositories"
+        )
+        
+        foreach ($dir in $infrastructureDirs) {
           if (Test-Path $dir) {
             Write-Host "✓ Found directory $dir" -ForegroundColor Green
           } else {
@@ -133,7 +153,6 @@ jobs:
         $presentationDirs = @(
           "source/MyModelViewPresenter/Presentation/Infrastructure",
           "source/MyModelViewPresenter/Presentation/Presenters",
-          "source/MyModelViewPresenter/Presentation/Repositories",
           "source/MyModelViewPresenter/Presentation/Views"
         )
         
@@ -143,5 +162,21 @@ jobs:
           } else {
             Write-Host "✗ Missing directory $dir" -ForegroundColor Red
           }
+        }
+        
+        # Validate clean architecture - Infrastructure should contain ProductRepository
+        if (Test-Path "source/MyModelViewPresenter/Infrastructure/Repositories/ProductRepository.cs") {
+          Write-Host "✓ ProductRepository correctly placed in Infrastructure layer" -ForegroundColor Green
+        } else {
+          Write-Host "✗ ProductRepository missing from Infrastructure layer" -ForegroundColor Red
+          exit 1
+        }
+        
+        # Ensure Presentation no longer has repository implementation
+        if (Test-Path "source/MyModelViewPresenter/Presentation/Repositories/ProductRepository.cs") {
+          Write-Host "✗ ProductRepository found in Presentation layer - should be in Infrastructure" -ForegroundColor Red
+          exit 1
+        } else {
+          Write-Host "✓ Presentation layer correctly contains no repository implementations" -ForegroundColor Green
         }
       shell: pwsh
