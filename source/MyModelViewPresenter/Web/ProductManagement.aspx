@@ -331,6 +331,31 @@
             vertical-align: middle;
         }
 
+        /* Bootstrap utility classes for table cells */
+        .fw-bold {
+            font-weight: 700 !important;
+        }
+        
+        .fw-medium {
+            font-weight: 500 !important;
+        }
+        
+        .fw-semibold {
+            font-weight: 600 !important;
+        }
+        
+        .text-primary {
+            color: #667eea !important;
+        }
+        
+        .text-success {
+            color: #13B497 !important;
+        }
+        
+        .text-muted {
+            color: #6c757d !important;
+        }
+
         /* Button Icons using CSS */
         .btn-with-icon::before {
             font-family: 'bootstrap-icons';
@@ -683,25 +708,15 @@
                                     </div>
                                 </EmptyDataTemplate>
                                 <Columns>
-                                    <asp:BoundField DataField="Id" HeaderText="ID" ItemStyle-Width="80px">
-                                        <ItemStyle Font-Bold="true" ForeColor="#667eea" />
-                                    </asp:BoundField>
-                                    <asp:BoundField DataField="Name" HeaderText="Product Name">
-                                        <ItemStyle Font-Weight="500" />
-                                    </asp:BoundField>
+                                    <asp:BoundField DataField="Id" HeaderText="ID" ItemStyle-Width="80px" ItemStyle-CssClass="fw-bold text-primary" />
+                                    <asp:BoundField DataField="Name" HeaderText="Product Name" ItemStyle-CssClass="fw-medium" />
                                     <asp:BoundField DataField="Price" HeaderText="Price" 
-                                        DataFormatString="{0:C}" ItemStyle-Width="120px">
-                                        <ItemStyle Font-Weight="600" ForeColor="#13B497" />
-                                    </asp:BoundField>
+                                        DataFormatString="{0:C}" ItemStyle-Width="120px" ItemStyle-CssClass="fw-semibold text-success" />
                                     <asp:BoundField DataField="StockQuantity" HeaderText="Stock" 
-                                        ItemStyle-Width="100px">
-                                        <ItemStyle HorizontalAlign="Center" />
-                                    </asp:BoundField>
+                                        ItemStyle-Width="100px" ItemStyle-HorizontalAlign="Center" />
                                     <asp:BoundField DataField="CreatedDate" HeaderText="Created" 
-                                        DataFormatString="{0:MMM dd, yyyy}" ItemStyle-Width="140px">
-                                        <ItemStyle ForeColor="#6c757d" />
-                                    </asp:BoundField>
-                                    <asp:TemplateField HeaderText="Actions" ItemStyle-Width="180px">
+                                        DataFormatString="{0:MMM dd, yyyy}" ItemStyle-Width="140px" ItemStyle-CssClass="text-muted" />
+                                    <asp:TemplateField HeaderText="Actions" ItemStyle-Width="180px" ItemStyle-HorizontalAlign="Center">
                                         <ItemTemplate>
                                             <asp:Button ID="btnEdit" runat="server" Text=" Edit" 
                                                 CommandName="EditProduct" CommandArgument='<%# Eval("Id") %>'
@@ -711,7 +726,6 @@
                                                 CssClass="btn btn-action btn-delete btn-with-icon-sm" CausesValidation="false"
                                                 OnClientClick="return confirm('Are you sure you want to delete this product?');" />
                                         </ItemTemplate>
-                                        <ItemStyle HorizontalAlign="Center" />
                                     </asp:TemplateField>
                                 </Columns>
                             </asp:GridView>
