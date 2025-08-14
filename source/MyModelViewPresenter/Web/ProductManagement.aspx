@@ -331,6 +331,50 @@
             vertical-align: middle;
         }
 
+        /* Button Icons using CSS */
+        .btn-with-icon::before {
+            font-family: 'bootstrap-icons';
+            margin-right: 0.5rem;
+            display: inline-block;
+            font-weight: normal;
+        }
+        
+        .btn-search::before {
+            content: '\F52A';
+        }
+        
+        .btn-show-all::before {
+            content: '\F479';
+        }
+        
+        .btn-new::before {
+            content: '\F314';
+        }
+        
+        .btn-save::before {
+            content: '\F26B';
+        }
+        
+        .btn-cancel::before {
+            content: '\F622';
+        }
+        
+        .btn-with-icon-sm::before {
+            font-family: 'bootstrap-icons';
+            margin-right: 0.25rem;
+            display: inline-block;
+            font-weight: normal;
+            font-size: 0.875rem;
+        }
+        
+        .btn-edit::before {
+            content: '\F4CA';
+        }
+        
+        .btn-delete::before {
+            content: '\F5DE';
+        }
+
         /* Action Buttons in Table */
         .btn-action {
             padding: 0.375rem 0.75rem;
@@ -511,18 +555,12 @@
                 </div>
                 <div class="col-lg-4 col-md-5 mt-3 mt-md-0">
                     <div class="btn-group-actions d-flex gap-2">
-                        <asp:Button ID="btnSearch" runat="server" Text="Search" 
-                            CssClass="btn btn-primary flex-fill" OnClick="btnSearch_Click">
-                            <i class="bi bi-search me-2"></i>
-                        </asp:Button>
-                        <asp:Button ID="btnShowAll" runat="server" Text="Show All" 
-                            CssClass="btn btn-secondary flex-fill" OnClick="btnShowAll_Click">
-                            <i class="bi bi-list-ul me-2"></i>
-                        </asp:Button>
-                        <asp:Button ID="btnNewProduct" runat="server" Text="New Product" 
-                            CssClass="btn btn-success flex-fill" OnClick="btnNewProduct_Click">
-                            <i class="bi bi-plus-circle me-2"></i>
-                        </asp:Button>
+                        <asp:Button ID="btnSearch" runat="server" Text=" Search" 
+                            CssClass="btn btn-primary flex-fill btn-with-icon btn-search" OnClick="btnSearch_Click" />
+                        <asp:Button ID="btnShowAll" runat="server" Text=" Show All" 
+                            CssClass="btn btn-secondary flex-fill btn-with-icon btn-show-all" OnClick="btnShowAll_Click" />
+                        <asp:Button ID="btnNewProduct" runat="server" Text=" New Product" 
+                            CssClass="btn btn-success flex-fill btn-with-icon btn-new" OnClick="btnNewProduct_Click" />
                     </div>
                 </div>
             </div>
@@ -606,16 +644,12 @@
                     </div>
 
                     <div class="d-flex gap-3 mt-4">
-                        <asp:Button ID="btnSave" runat="server" Text="Save Product" 
-                            CssClass="btn btn-primary btn-lg" OnClick="btnSave_Click" 
-                            ValidationGroup="ProductValidation">
-                            <i class="bi bi-check-circle me-2"></i>
-                        </asp:Button>
-                        <asp:Button ID="btnCancel" runat="server" Text="Cancel" 
-                            CssClass="btn btn-secondary btn-lg" OnClick="btnCancel_Click" 
-                            CausesValidation="false">
-                            <i class="bi bi-x-circle me-2"></i>
-                        </asp:Button>
+                        <asp:Button ID="btnSave" runat="server" Text=" Save Product" 
+                            CssClass="btn btn-primary btn-lg btn-with-icon btn-save" OnClick="btnSave_Click" 
+                            ValidationGroup="ProductValidation" />
+                        <asp:Button ID="btnCancel" runat="server" Text=" Cancel" 
+                            CssClass="btn btn-secondary btn-lg btn-with-icon btn-cancel" OnClick="btnCancel_Click" 
+                            CausesValidation="false" />
                     </div>
                 </div>
             </div>
@@ -669,17 +703,13 @@
                                     </asp:BoundField>
                                     <asp:TemplateField HeaderText="Actions" ItemStyle-Width="180px">
                                         <ItemTemplate>
-                                            <asp:Button ID="btnEdit" runat="server" Text="Edit" 
+                                            <asp:Button ID="btnEdit" runat="server" Text=" Edit" 
                                                 CommandName="EditProduct" CommandArgument='<%# Eval("Id") %>'
-                                                CssClass="btn btn-action btn-edit" CausesValidation="false">
-                                                <i class="bi bi-pencil"></i>
-                                            </asp:Button>
-                                            <asp:Button ID="btnDelete" runat="server" Text="Delete" 
+                                                CssClass="btn btn-action btn-edit btn-with-icon-sm" CausesValidation="false" />
+                                            <asp:Button ID="btnDelete" runat="server" Text=" Delete" 
                                                 CommandName="DeleteProduct" CommandArgument='<%# Eval("Id") %>'
-                                                CssClass="btn btn-action btn-delete" CausesValidation="false"
-                                                OnClientClick="return confirm('Are you sure you want to delete this product?');">
-                                                <i class="bi bi-trash"></i>
-                                            </asp:Button>
+                                                CssClass="btn btn-action btn-delete btn-with-icon-sm" CausesValidation="false"
+                                                OnClientClick="return confirm('Are you sure you want to delete this product?');" />
                                         </ItemTemplate>
                                         <ItemStyle HorizontalAlign="Center" />
                                     </asp:TemplateField>
