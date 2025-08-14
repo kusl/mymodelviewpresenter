@@ -1,25 +1,38 @@
 ﻿using System;
 using System.Collections.Generic;
-using System.ComponentModel.DataAnnotations;
 using System.Linq;
 using System.Threading.Tasks;
 using Core.Models;
-using Core.Repositories;
+using Core.Services;
 using Presentation.Views;
 
 namespace Presentation.Presenters
 {
+    /// <summary>
+    /// Presenter for Product views following MVP pattern.
+    /// Acts as intermediary between View and Service layers.
+    /// Follows Single Responsibility Principle by handling only presentation logic.
+    /// </summary>
     public class ProductPresenter : IDisposable
     {
         private readonly IProductView _view;
-        private readonly IProductRepository _repository;
+        private readonly IProductService _productService;
+        private bool _disposed = false;
 
-        public ProductPresenter(IProductView view, IProductRepository repository)
+        public ProductPresenter(IProductView view, IProductService productService)
         {
             _view = view ?? throw new ArgumentNullException(nameof(view));
-            _repository = repository ?? throw new ArgumentNullException(nameof(repository));
+            _productService = productService ?? throw new ArgumentNullException(nameof(productService));
 
             // Subscribe to view events
+            SubscribeToViewEvents();
+        }
+
+        /// <summary>
+        /// Subscribes to all view events.
+        /// </summary>
+        private void SubscribeToViewEvents()
+        {
             _view.LoadProducts += OnLoadProducts;
             _view.LoadProduct += OnLoadProduct;
             _view.SaveProduct += OnSaveProduct;
@@ -28,230 +41,10 @@ namespace Presentation.Presenters
             _view.CreateNewProduct += OnCreateNewProduct;
         }
 
-        private async void OnLoadProducts(object sender, EventArgs e)
-        {
-            try
-            {
-                _view.SetLoadingState(true);
-                var products = await _repository.GetAllProductsAsync();
-                _view.ShowProducts(products);
-                _view.ErrorMessage = string.Empty;
-            }
-            catch (Exception ex)
-            {
-                _view.ShowError($"Error loading products: {ex.Message}");
-                LogError(ex);
-            }
-            finally
-            {
-                _view.SetLoadingState(false);
-            }
-        }
-
-        private async void OnLoadProduct(object sender, int productId)
-        {
-            try
-            {
-                _view.SetLoadingState(true);
-                var product = await _repository.GetProductByIdAsync(productId);
-                
-                if (product == null)
-                {
-                    _view.ShowError("Product not found.");
-                    return;
-                }
-
-                _view.ShowProduct(product);
-            }
-            catch (Exception ex)
-            {
-                _view.ShowError($"Error loading product: {ex.Message}");
-                LogError(ex);
-            }
-            finally
-            {
-                _view.SetLoadingState(false);
-            }
-        }
-
-        private async void OnSaveProduct(object sender, EventArgs e)
-        {
-            try
-            {
-                _view.SetLoadingState(true);
-
-                // Validate input
-                var validationErrors = await ValidateProductAsync();
-                if (validationErrors.Any())
-                {
-                    _view.ShowValidationErrors(validationErrors);
-                    return;
-                }
-
-                var product = new Product
-                {
-                    Id = _view.ProductId ?? 0,
-                    Name = _view.ProductName,
-                    Price = _view.ProductPrice,
-                    Description = _view.ProductDescription,
-                    StockQuantity = _view.StockQuantity
-                };
-
-                bool success;
-                string message;
-
-                if (_view.IsEditMode)
-                {
-                    success = await _repository.UpdateProductAsync(product);
-                    message = success ? "Product updated successfully." : "Failed to update product.";
-                }
-                else
-                {
-                    var newId = await _repository.AddProductAsync(product);
-                    success = newId > 0;
-                    message = success ? "Product added successfully." : "Failed to add product.";
-                }
-
-                if (success)
-                {
-                    _view.ShowSuccess(message);
-                    _view.ClearForm();
-                    await RefreshProductListAsync();
-                }
-                else
-                {
-                    _view.ShowError(message);
-                }
-            }
-            catch (Exception ex)
-            {
-                _view.ShowError($"Error saving product: {ex.Message}");
-                LogError(ex);
-            }
-            finally
-            {
-                _view.SetLoadingState(false);
-            }
-        }
-
-        private async void OnDeleteProduct(object sender, int productId)
-        {
-            try
-            {
-                _view.SetLoadingState(true);
-                
-                var success = await _repository.DeleteProductAsync(productId);
-                
-                if (success)
-                {
-                    _view.ShowSuccess("Product deleted successfully.");
-                    await RefreshProductListAsync();
-                }
-                else
-                {
-                    _view.ShowError("Failed to delete product.");
-                }
-            }
-            catch (Exception ex)
-            {
-                _view.ShowError($"Error deleting product: {ex.Message}");
-                LogError(ex);
-            }
-            finally
-            {
-                _view.SetLoadingState(false);
-            }
-        }
-
-        private async void OnSearchProducts(object sender, string searchTerm)
-        {
-            try
-            {
-                _view.SetLoadingState(true);
-                
-                IEnumerable<Product> products;
-                
-                if (string.IsNullOrWhiteSpace(searchTerm))
-                {
-                    products = await _repository.GetAllProductsAsync();
-                }
-                else
-                {
-                    products = await _repository.SearchProductsAsync(searchTerm);
-                }
-                
-                _view.ShowProducts(products);
-                
-                if (!products.Any())
-                {
-                    _view.ShowError($"No products found matching '{searchTerm}'.");
-                }
-            }
-            catch (Exception ex)
-            {
-                _view.ShowError($"Error searching products: {ex.Message}");
-                LogError(ex);
-            }
-            finally
-            {
-                _view.SetLoadingState(false);
-            }
-        }
-
-        private void OnCreateNewProduct(object sender, EventArgs e)
-        {
-            _view.ClearForm();
-            _view.IsEditMode = false;
-        }
-
-        private async Task<Dictionary<string, string>> ValidateProductAsync()
-        {
-            var errors = new Dictionary<string, string>();
-
-            if (string.IsNullOrWhiteSpace(_view.ProductName))
-            {
-                errors.Add("Name", "Product name is required.");
-            }
-            else if (_view.ProductName.Length > 100)
-            {
-                errors.Add("Name", "Product name cannot exceed 100 characters.");
-            }
-
-            if (_view.ProductPrice <= 0)
-            {
-                errors.Add("Price", "Price must be greater than 0.");
-            }
-
-            if (_view.StockQuantity < 0)
-            {
-                errors.Add("Stock", "Stock quantity cannot be negative.");
-            }
-
-            // Business rule validation - check for duplicate names
-            if (!string.IsNullOrWhiteSpace(_view.ProductName))
-            {
-                var exists = await _repository.ProductExistsAsync(_view.ProductName, _view.ProductId);
-                if (exists)
-                {
-                    errors.Add("Name", "A product with this name already exists.");
-                }
-            }
-
-            return errors;
-        }
-
-        private async Task RefreshProductListAsync()
-        {
-            var products = await _repository.GetAllProductsAsync();
-            _view.ShowProducts(products);
-        }
-
-        private void LogError(Exception ex)
-        {
-            System.Diagnostics.Debug.WriteLine($"Error: {ex}");
-        }
-
-        public void Dispose()
+        /// <summary>
+        /// Unsubscribes from all view events.
+        /// </summary>
+        private void UnsubscribeFromViewEvents()
         {
             if (_view != null)
             {
@@ -263,5 +56,264 @@ namespace Presentation.Presenters
                 _view.CreateNewProduct -= OnCreateNewProduct;
             }
         }
+
+        #region Event Handlers
+
+        private async void OnLoadProducts(object sender, EventArgs e)
+        {
+            await ExecuteAsync(async () =>
+            {
+                var products = await _productService.GetAllProductsAsync();
+                _view.ShowProducts(products);
+                _view.ErrorMessage = string.Empty;
+            }, "loading products");
+        }
+
+        private async void OnLoadProduct(object sender, int productId)
+        {
+            if (productId <= 0)
+            {
+                _view.ShowError("Invalid product ID");
+                return;
+            }
+
+            await ExecuteAsync(async () =>
+            {
+                var product = await _productService.GetProductByIdAsync(productId);
+                
+                if (product == null)
+                {
+                    _view.ShowError("Product not found");
+                    return;
+                }
+
+                _view.ShowProduct(product);
+            }, "loading product");
+        }
+
+        private async void OnSaveProduct(object sender, EventArgs e)
+        {
+            await ExecuteAsync(async () =>
+            {
+                var product = CreateProductFromView();
+                
+                ServiceResult<bool> updateResult = null;
+                ServiceResult<int> createResult = null;
+                
+                if (_view.IsEditMode)
+                {
+                    updateResult = await _productService.UpdateProductAsync(product);
+                    
+                    if (updateResult.IsSuccess)
+                    {
+                        _view.ShowSuccess("Product updated successfully");
+                        await RefreshProductListAsync();
+                        _view.ClearForm();
+                    }
+                    else
+                    {
+                        HandleServiceError(updateResult.ErrorMessage, updateResult.ValidationErrors);
+                    }
+                }
+                else
+                {
+                    createResult = await _productService.CreateProductAsync(product);
+                    
+                    if (createResult.IsSuccess)
+                    {
+                        _view.ShowSuccess("Product created successfully");
+                        await RefreshProductListAsync();
+                        _view.ClearForm();
+                    }
+                    else
+                    {
+                        HandleServiceError(createResult.ErrorMessage, createResult.ValidationErrors);
+                    }
+                }
+            }, _view.IsEditMode ? "updating product" : "creating product");
+        }
+
+        private async void OnDeleteProduct(object sender, int productId)
+        {
+            if (productId <= 0)
+            {
+                _view.ShowError("Invalid product ID");
+                return;
+            }
+
+            await ExecuteAsync(async () =>
+            {
+                var result = await _productService.DeleteProductAsync(productId);
+                
+                if (result.IsSuccess)
+                {
+                    _view.ShowSuccess("Product deleted successfully");
+                    await RefreshProductListAsync();
+                }
+                else
+                {
+                    _view.ShowError(result.ErrorMessage);
+                }
+            }, "deleting product");
+        }
+
+        private async void OnSearchProducts(object sender, string searchTerm)
+        {
+            await ExecuteAsync(async () =>
+            {
+                var products = await _productService.SearchProductsAsync(searchTerm);
+                _view.ShowProducts(products);
+                
+                if (!products.Any())
+                {
+                    var message = string.IsNullOrWhiteSpace(searchTerm) 
+                        ? "No products found" 
+                        : $"No products found matching '{searchTerm}'";
+                    _view.ShowError(message);
+                }
+                else
+                {
+                    _view.ErrorMessage = string.Empty;
+                }
+            }, "searching products");
+        }
+
+        private void OnCreateNewProduct(object sender, EventArgs e)
+        {
+            _view.ClearForm();
+            _view.IsEditMode = false;
+        }
+
+        #endregion
+
+        #region Helper Methods
+
+        /// <summary>
+        /// Creates a Product model from the current view state.
+        /// </summary>
+        private Product CreateProductFromView()
+        {
+            return new Product
+            {
+                Id = _view.ProductId ?? 0,
+                Name = _view.ProductName?.Trim(),
+                Price = _view.ProductPrice,
+                Description = _view.ProductDescription?.Trim(),
+                StockQuantity = _view.StockQuantity
+            };
+        }
+
+        /// <summary>
+        /// Refreshes the product list in the view.
+        /// </summary>
+        private async Task RefreshProductListAsync()
+        {
+            try
+            {
+                var products = await _productService.GetAllProductsAsync();
+                _view.ShowProducts(products);
+            }
+            catch (Exception ex)
+            {
+                LogError(ex, "refreshing product list");
+                // Don't show error to user for refresh operation
+            }
+        }
+
+        /// <summary>
+        /// Handles service errors by displaying appropriate messages to the user.
+        /// </summary>
+        private void HandleServiceError(string errorMessage, Dictionary<string, string> validationErrors)
+        {
+            if (validationErrors != null && validationErrors.Any())
+            {
+                _view.ShowValidationErrors(validationErrors);
+            }
+            else if (!string.IsNullOrWhiteSpace(errorMessage))
+            {
+                _view.ShowError(errorMessage);
+            }
+            else
+            {
+                _view.ShowError("An unexpected error occurred");
+            }
+        }
+
+        /// <summary>
+        /// Executes an async operation with proper error handling and loading state management.
+        /// </summary>
+        private async Task ExecuteAsync(Func<Task> operation, string operationName)
+        {
+            if (_disposed)
+            {
+                return;
+            }
+
+            try
+            {
+                _view.SetLoadingState(true);
+                await operation();
+            }
+            catch (InvalidOperationException ex)
+            {
+                // These are business logic errors that should be shown to the user
+                _view.ShowError(ex.Message);
+                LogError(ex, operationName);
+            }
+            catch (ArgumentException ex)
+            {
+                // These are validation errors that should be shown to the user
+                _view.ShowError("Invalid input: " + ex.Message);
+                LogError(ex, operationName);
+            }
+            catch (Exception ex)
+            {
+                // Unexpected errors - show generic message to user, log details
+                _view.ShowError($"An error occurred while {operationName}. Please try again.");
+                LogError(ex, operationName);
+            }
+            finally
+            {
+                if (!_disposed)
+                {
+                    _view.SetLoadingState(false);
+                }
+            }
+        }
+
+        /// <summary>
+        /// Logs errors for debugging and monitoring purposes.
+        /// </summary>
+        private void LogError(Exception ex, string operation)
+        {
+            // In a real application, use a proper logging framework like NLog, Serilog, etc.
+            var timestamp = DateTime.Now.ToString("yyyy-MM-dd HH:mm:ss");
+            var message = $"[{timestamp}] Error during {operation}: {ex}";
+            System.Diagnostics.Debug.WriteLine(message);
+            
+            // Could also log to file, database, or external service
+            // Logger.Error(ex, "Error during {Operation}", operation);
+        }
+
+        #endregion
+
+        #region IDisposable Implementation
+
+        public void Dispose()
+        {
+            Dispose(true);
+            GC.SuppressFinalize(this);
+        }
+
+        protected virtual void Dispose(bool disposing)
+        {
+            if (!_disposed && disposing)
+            {
+                UnsubscribeFromViewEvents();
+                _disposed = true;
+            }
+        }
+
+        #endregion
     }
 }
