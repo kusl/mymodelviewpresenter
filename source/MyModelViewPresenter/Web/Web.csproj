@@ -124,6 +124,9 @@
   <ItemGroup>
     <Content Include="App_Data\.gitkeep" />
   </ItemGroup>
+  <ItemGroup>
+    <None Include="Properties\PublishProfiles\site33827-WebDeploy.pubxml" />
+  </ItemGroup>
   <PropertyGroup>
     <VisualStudioVersion Condition="'$(VisualStudioVersion)' == ''">10.0</VisualStudioVersion>
     <VSToolsPath Condition="'$(VSToolsPath)' == ''">$(MSBuildExtensionsPath32)\Microsoft\VisualStudio\v$(VisualStudioVersion)</VSToolsPath>
