@@ -24,10 +24,16 @@ namespace ProductApp.Infrastructure
                 entity.Property(e => e.Name).IsRequired().HasMaxLength(100);
                 entity.Property(e => e.Price).HasPrecision(8, 2);
                 entity.Property(e => e.Description).HasMaxLength(500);
+
+                // Add unique constraint on Name (applies to all products, active or not)
+                entity.HasIndex(e => e.Name)
+                    .IsUnique();
+
+                // Keep the performance index
                 entity.HasIndex(e => new { e.Name, e.IsActive });
             });
 
-            // Seed data
+            // Seed data remains the same...
             modelBuilder.Entity<Product>().HasData(
                 new Product { Id = 1, Name = "Wireless Mouse", Price = 29.99m, Description = "Ergonomic wireless mouse with precision tracking", StockQuantity = 150, CreatedDate = DateTime.UtcNow, IsActive = true },
                 new Product { Id = 2, Name = "Mechanical Keyboard", Price = 89.99m, Description = "RGB backlit mechanical keyboard with blue switches", StockQuantity = 75, CreatedDate = DateTime.UtcNow, IsActive = true },
