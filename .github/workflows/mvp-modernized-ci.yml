@@ -46,36 +46,6 @@ jobs:
     - name: Build solution
       run: dotnet build ${{ env.PROJECT_PATH }} --configuration Release --no-restore
 
-    - name: Run Domain project tests
-      run: |
-        dotnet test ${{ env.PROJECT_PATH }}/ProductApp.Domain/ProductApp.Domain.csproj \
-          --configuration Release \
-          --no-build \
-          --verbosity normal \
-          --logger "trx;LogFileName=domain-test-results.trx" \
-          --logger "console;verbosity=detailed" \
-          --collect:"XPlat Code Coverage"
-
-    - name: Run Application project tests
-      run: |
-        dotnet test ${{ env.PROJECT_PATH }}/ProductApp.Application/ProductApp.Application.csproj \
-          --configuration Release \
-          --no-build \
-          --verbosity normal \
-          --logger "trx;LogFileName=application-test-results.trx" \
-          --logger "console;verbosity=detailed" \
-          --collect:"XPlat Code Coverage"
-
-    - name: Run Infrastructure project tests
-      run: |
-        dotnet test ${{ env.PROJECT_PATH }}/ProductApp.Infrastructure/ProductApp.Infrastructure.csproj \
-          --configuration Release \
-          --no-build \
-          --verbosity normal \
-          --logger "trx;LogFileName=infrastructure-test-results.trx" \
-          --logger "console;verbosity=detailed" \
-          --collect:"XPlat Code Coverage"
-
     - name: Run Unit Tests
       run: |
         dotnet test ${{ env.PROJECT_PATH }}/ProductApp.Tests/ProductApp.Tests.csproj \
