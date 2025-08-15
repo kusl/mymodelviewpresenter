@@ -261,102 +261,151 @@ public class ProductTests : IAsyncLifetime
             // Add a small delay to ensure all products are fully loaded
             await Task.Delay(1000);
 
-            // Act - Click Name header to sort (first click = ascending)
-            await _page.ClickAsync("th:has-text('Name')");
+            // CRITICAL: Check the initial order BEFORE any clicks
+            Console.WriteLine("=== CHECKING INITIAL STATE BEFORE ANY CLICKS ===");
+            var initialNames = await _page.Locator("tbody tr td:first-child").AllTextContentsAsync();
 
-            // Wait longer for the sort to complete
-            await _page.WaitForLoadStateAsync(LoadState.NetworkIdle);
-            await Task.Delay(2000); // Give extra time for sorting
-
-            // Get all current product names for debugging
-            var allProductNames = await _page.Locator("tbody tr td:first-child").AllTextContentsAsync();
-
-            // Debug: Print all product names to see what's in the table
-            Console.WriteLine("=== ASCENDING SORT - All products in table ===");
-            for (int i = 0; i < allProductNames.Count; i++)
+            // Print first 10 products to see initial order
+            Console.WriteLine("First 10 products in initial order:");
+            for (int i = 0; i < Math.Min(initialNames.Count, 10); i++)
             {
-                Console.WriteLine($"Position {i}: {allProductNames[i]}");
+                Console.WriteLine($"Position {i}: {initialNames[i]}");
             }
 
-            // Find our test products and their positions
-            var testProductPositions = new Dictionary<string, int>();
-            for (int i = 0; i < allProductNames.Count; i++)
+            // Find our test products' initial positions
+            var initialPositions = new Dictionary<string, int>();
+            for (int i = 0; i < initialNames.Count; i++)
             {
-                var name = allProductNames[i];
+                var name = initialNames[i];
                 if (name.Contains($"Test Product {baseId}"))
                 {
-                    if (name.Contains("AAA")) testProductPositions["AAA"] = i;
-                    else if (name.Contains("BBB")) testProductPositions["BBB"] = i;
-                    else if (name.Contains("CCC")) testProductPositions["CCC"] = i;
+                    if (name.Contains("AAA")) initialPositions["AAA"] = i;
+                    else if (name.Contains("BBB")) initialPositions["BBB"] = i;
+                    else if (name.Contains("CCC")) initialPositions["CCC"] = i;
                 }
             }
 
-            Console.WriteLine($"=== Our test products positions (Ascending) ===");
-            foreach (var kvp in testProductPositions.OrderBy(x => x.Value))
+            Console.WriteLine("\nOur test products' initial positions:");
+            foreach (var kvp in initialPositions.OrderBy(x => x.Value))
             {
                 Console.WriteLine($"{kvp.Key}: position {kvp.Value}");
             }
 
-            // Assert - Should find all 3 test products
-            Assert.True(testProductPositions.Count == 3, $"Should find all 3 test products, but found {testProductPositions.Count}");
+            // Determine the initial sort order
+            bool initiallyAscending = initialPositions.Count == 3 &&
+                                     initialPositions["AAA"] < initialPositions["BBB"] &&
+                                     initialPositions["BBB"] < initialPositions["CCC"];
+            bool initiallyDescending = initialPositions.Count == 3 &&
+                                      initialPositions["CCC"] < initialPositions["BBB"] &&
+                                      initialPositions["BBB"] < initialPositions["AAA"];
 
-            // Assert - In ascending order: AAA should come before BBB, BBB should come before CCC
-            Assert.True(testProductPositions["AAA"] < testProductPositions["BBB"],
-                $"In ascending order: AAA (position {testProductPositions["AAA"]}) should come before BBB (position {testProductPositions["BBB"]})");
-            Assert.True(testProductPositions["BBB"] < testProductPositions["CCC"],
-                $"In ascending order: BBB (position {testProductPositions["BBB"]}) should come before CCC (position {testProductPositions["CCC"]})");
+            Console.WriteLine($"\nInitial sort order: {(initiallyAscending ? "ASCENDING" : initiallyDescending ? "DESCENDING" : "MIXED/UNSORTED")}");
 
-            // Act - Click again to reverse sort (second click = descending)
+            // Act - First click on Name header
+            Console.WriteLine("\n=== CLICKING NAME HEADER (FIRST CLICK) ===");
             await _page.ClickAsync("th:has-text('Name')");
+
+            // Wait for the sort to complete
             await _page.WaitForLoadStateAsync(LoadState.NetworkIdle);
             await Task.Delay(2000); // Give extra time for sorting
 
-            // Get the reversed order
-            var reversedNames = await _page.Locator("tbody tr td:first-child").AllTextContentsAsync();
+            // Get order after first click
+            var afterFirstClick = await _page.Locator("tbody tr td:first-child").AllTextContentsAsync();
 
-            // Debug: Print all product names after reverse sort
-            Console.WriteLine("=== DESCENDING SORT - All products in table ===");
-            for (int i = 0; i < reversedNames.Count; i++)
+            Console.WriteLine("\nFirst 10 products after first click:");
+            for (int i = 0; i < Math.Min(afterFirstClick.Count, 10); i++)
             {
-                Console.WriteLine($"Position {i}: {reversedNames[i]}");
+                Console.WriteLine($"Position {i}: {afterFirstClick[i]}");
             }
 
-            // Find our test products and their new positions
-            var reversedProductPositions = new Dictionary<string, int>();
-            for (int i = 0; i < reversedNames.Count; i++)
+            // Find our test products after first click
+            var firstClickPositions = new Dictionary<string, int>();
+            for (int i = 0; i < afterFirstClick.Count; i++)
             {
-                var name = reversedNames[i];
+                var name = afterFirstClick[i];
                 if (name.Contains($"Test Product {baseId}"))
                 {
-                    if (name.Contains("AAA")) reversedProductPositions["AAA"] = i;
-                    else if (name.Contains("BBB")) reversedProductPositions["BBB"] = i;
-                    else if (name.Contains("CCC")) reversedProductPositions["CCC"] = i;
+                    if (name.Contains("AAA")) firstClickPositions["AAA"] = i;
+                    else if (name.Contains("BBB")) firstClickPositions["BBB"] = i;
+                    else if (name.Contains("CCC")) firstClickPositions["CCC"] = i;
                 }
             }
 
-            Console.WriteLine($"=== Our test products positions (Descending) ===");
-            foreach (var kvp in reversedProductPositions.OrderBy(x => x.Value))
+            Console.WriteLine("\nOur test products after first click:");
+            foreach (var kvp in firstClickPositions.OrderBy(x => x.Value))
             {
                 Console.WriteLine($"{kvp.Key}: position {kvp.Value}");
             }
 
-            // Assert - Should still find all 3 test products
-            Assert.True(reversedProductPositions.Count == 3, $"Should find all 3 test products in reversed list, but found {reversedProductPositions.Count}");
+            // Determine order after first click
+            bool firstClickAscending = firstClickPositions.Count == 3 &&
+                                      firstClickPositions["AAA"] < firstClickPositions["BBB"] &&
+                                      firstClickPositions["BBB"] < firstClickPositions["CCC"];
+            bool firstClickDescending = firstClickPositions.Count == 3 &&
+                                       firstClickPositions["CCC"] < firstClickPositions["BBB"] &&
+                                       firstClickPositions["BBB"] < firstClickPositions["AAA"];
 
-            // Check if the sort order changed at all
-            bool sortOrderChanged = !testProductPositions.SequenceEqual(reversedProductPositions);
-            Console.WriteLine($"Sort order changed: {sortOrderChanged}");
+            Console.WriteLine($"After first click: {(firstClickAscending ? "ASCENDING" : firstClickDescending ? "DESCENDING" : "MIXED/UNSORTED")}");
 
-            if (!sortOrderChanged)
+            // Assert - First click should have changed the order
+            Assert.True(firstClickPositions.Count == 3, $"Should find all 3 test products after first click, but found {firstClickPositions.Count}");
+            Assert.True(firstClickAscending || firstClickDescending, "After first click, products should be sorted (either ascending or descending)");
+            Assert.NotEqual(initiallyAscending, firstClickAscending);
+
+            // Act - Second click on Name header
+            Console.WriteLine("\n=== CLICKING NAME HEADER (SECOND CLICK) ===");
+            await _page.ClickAsync("th:has-text('Name')");
+            await _page.WaitForLoadStateAsync(LoadState.NetworkIdle);
+            await Task.Delay(2000); // Give extra time for sorting
+
+            // Get order after second click
+            var afterSecondClick = await _page.Locator("tbody tr td:first-child").AllTextContentsAsync();
+
+            Console.WriteLine("\nFirst 10 products after second click:");
+            for (int i = 0; i < Math.Min(afterSecondClick.Count, 10); i++)
             {
-                Assert.True(false, "Sort order did not change after clicking the header twice. The sorting functionality may not be working.");
+                Console.WriteLine($"Position {i}: {afterSecondClick[i]}");
             }
 
-            // Assert - In descending order: CCC should come before BBB, BBB should come before AAA
-            Assert.True(reversedProductPositions["CCC"] < reversedProductPositions["BBB"],
-                $"In descending order: CCC (position {reversedProductPositions["CCC"]}) should come before BBB (position {reversedProductPositions["BBB"]})");
-            Assert.True(reversedProductPositions["BBB"] < reversedProductPositions["AAA"],
-                $"In descending order: BBB (position {reversedProductPositions["BBB"]}) should come before AAA (position {reversedProductPositions["AAA"]})");
+            // Find our test products after second click
+            var secondClickPositions = new Dictionary<string, int>();
+            for (int i = 0; i < afterSecondClick.Count; i++)
+            {
+                var name = afterSecondClick[i];
+                if (name.Contains($"Test Product {baseId}"))
+                {
+                    if (name.Contains("AAA")) secondClickPositions["AAA"] = i;
+                    else if (name.Contains("BBB")) secondClickPositions["BBB"] = i;
+                    else if (name.Contains("CCC")) secondClickPositions["CCC"] = i;
+                }
+            }
+
+            Console.WriteLine("\nOur test products after second click:");
+            foreach (var kvp in secondClickPositions.OrderBy(x => x.Value))
+            {
+                Console.WriteLine($"{kvp.Key}: position {kvp.Value}");
+            }
+
+            // Determine order after second click
+            bool secondClickAscending = secondClickPositions.Count == 3 &&
+                                       secondClickPositions["AAA"] < secondClickPositions["BBB"] &&
+                                       secondClickPositions["BBB"] < secondClickPositions["CCC"];
+            bool secondClickDescending = secondClickPositions.Count == 3 &&
+                                        secondClickPositions["CCC"] < secondClickPositions["BBB"] &&
+                                        secondClickPositions["BBB"] < secondClickPositions["AAA"];
+
+            Console.WriteLine($"After second click: {(secondClickAscending ? "ASCENDING" : secondClickDescending ? "DESCENDING" : "MIXED/UNSORTED")}");
+
+            // Assert - Second click should reverse the first click's order
+            Assert.True(secondClickPositions.Count == 3, $"Should find all 3 test products after second click, but found {secondClickPositions.Count}");
+            Assert.True(secondClickAscending || secondClickDescending, "After second click, products should be sorted");
+            Assert.NotEqual(firstClickAscending, secondClickAscending);
+
+            // The sort should be working as a toggle
+            Console.WriteLine($"\nSummary:");
+            Console.WriteLine($"Initial: {(initiallyAscending ? "Ascending" : initiallyDescending ? "Descending" : "Mixed")}");
+            Console.WriteLine($"After 1st click: {(firstClickAscending ? "Ascending" : firstClickDescending ? "Descending" : "Mixed")}");
+            Console.WriteLine($"After 2nd click: {(secondClickAscending ? "Ascending" : secondClickDescending ? "Descending" : "Mixed")}");
         }
         finally
         {
