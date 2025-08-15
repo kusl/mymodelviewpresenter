@@ -345,6 +345,8 @@ namespace ProductApp.Tests
             var result = await Service.SearchProductsAsync("wireless");
 
             // Assert
+            Assert.NotNull(result);
+            Assert.NotNull(result.Data);
             Assert.True(result.IsSuccess);
             Assert.Single(result.Data);
             Assert.Contains("Wireless", result.Data[0].Description);
@@ -362,6 +364,8 @@ namespace ProductApp.Tests
             var result = await Service.SearchProductsAsync("");
 
             // Assert
+            Assert.NotNull(result);
+            Assert.NotNull(result.Data);
             Assert.True(result.IsSuccess);
             Assert.Equal(3, result.Data.Count);
         }

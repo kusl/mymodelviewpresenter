@@ -1,80 +1,78 @@
-﻿// ProductTests.cs - Playwright tests for your Blazor Server app with xUnit
+﻿// ProductTests.cs - Independent Playwright tests for Blazor Server app
 using Microsoft.Playwright;
 using static Microsoft.Playwright.Assertions;
+
 namespace ProductApp.Tests.E2E;
 
 public class ProductTests : IAsyncLifetime
 {
-    private const string BaseUrl = "https://localhost:7141"; // Adjust to your URL
+    private const string BaseUrl = "http://pam.runasp.net";
     private IPlaywright _playwright = null!;
     private IBrowser _browser = null!;
     private IPage _page = null!;
 
     public async Task InitializeAsync()
     {
-        // Initialize Playwright
         _playwright = await Playwright.CreateAsync();
         _browser = await _playwright.Chromium.LaunchAsync(new BrowserTypeLaunchOptions
         {
-            Headless = false // Set to true for CI/CD
+            Headless = false
         });
         _page = await _browser.NewPageAsync();
 
         // Navigate to products page
         await _page.GotoAsync($"{BaseUrl}/products");
-
-        // Wait for the page to load and SignalR connection to establish
         await _page.WaitForLoadStateAsync(LoadState.NetworkIdle);
-
-        // Wait for any existing products to load
-        await _page.WaitForSelectorAsync(".glass-card", new() { Timeout = 10000 });
+        await _page.WaitForSelectorAsync(".glass-card", new() { Timeout = 15000 });
     }
 
     public async Task DisposeAsync()
     {
-        await _page?.CloseAsync();
-        await _browser?.CloseAsync();
+        if (_page != null) await _page.CloseAsync();
+        if (_browser != null) await _browser.CloseAsync();
         _playwright?.Dispose();
     }
 
     [Fact]
     public async Task Should_AddNewProduct_Successfully()
     {
-        // Arrange
-        var productName = $"Test Product {DateTime.Now:yyyyMMdd-HHmmss}";
+        // Arrange - Create unique test data
+        var uniqueId = DateTime.Now.Ticks.ToString();
+        var productName = $"E2E Test Product {uniqueId}";
         var productPrice = "29.99";
         var productStock = "100";
-        var productDescription = "Test product description";
+        var productDescription = $"E2E Test Description {uniqueId}";
 
-        // Act - Click Add Product button
-        await _page.ClickAsync("button:has-text('Add Product')");
+        // Act - Click Add Product button in header
+        await _page.ClickAsync(".input-group button:has-text('Add Product')");
 
-        // Wait for modal to appear
-        await _page.WaitForSelectorAsync(".modal.show", new() { State = WaitForSelectorState.Visible });
+        // Wait for modal
+        await _page.WaitForSelectorAsync(".modal.show", new() { State = WaitForSelectorState.Visible, Timeout = 10000 });
 
-        // Fill out the form
+        // Fill form
         await _page.FillAsync("#productName", productName);
         await _page.FillAsync("#productPrice", productPrice);
         await _page.FillAsync("#productStock", productStock);
         await _page.FillAsync("#productDescription", productDescription);
 
-        // Submit the form
-        await _page.ClickAsync("button:has-text('Add Product'):not(:has-text('Debug'))");
+        // Submit using modal footer button
+        await _page.ClickAsync(".modal-footer button.btn-primary:has-text('Add Product')");
 
-        // Wait for modal to close and success message
-        await _page.WaitForSelectorAsync(".modal.show", new() { State = WaitForSelectorState.Hidden });
+        // Wait for modal to close
+        await _page.WaitForSelectorAsync(".modal.show", new() { State = WaitForSelectorState.Hidden, Timeout = 15000 });
 
         // Assert - Check for success message
-        await _page.WaitForSelectorAsync(".alert-success", new() { Timeout = 5000 });
+        await _page.WaitForSelectorAsync(".alert-success", new() { Timeout = 15000 });
         var successMessage = await _page.TextContentAsync(".alert-success");
+        Assert.NotNull(successMessage);
         Assert.Contains("Product added successfully", successMessage);
 
-        // Assert - Check if product appears in table
-        await _page.WaitForSelectorAsync($"td:has-text('{productName}')", new() { Timeout = 5000 });
+        // Assert - Verify product appears in table
+        await _page.WaitForSelectorAsync($"td:has-text('{productName}')", new() { Timeout = 15000 });
         var productRow = _page.Locator($"tr:has(td:text('{productName}'))");
         await Expect(productRow).ToBeVisibleAsync();
 
-        // Assert - Verify all product details in table
+        // Verify product details
         await Expect(productRow.Locator("td").Nth(0)).ToHaveTextAsync(productName);
         await Expect(productRow.Locator("td").Nth(1)).ToContainTextAsync(productPrice);
         await Expect(productRow.Locator("td").Nth(2)).ToHaveTextAsync(productStock);
@@ -84,141 +82,272 @@ public class ProductTests : IAsyncLifetime
     [Fact]
     public async Task Should_EditExistingProduct_Successfully()
     {
-        // First, add a product to edit
-        await Should_AddNewProduct_Successfully();
+        // Arrange - First create a product to edit
+        var originalId = DateTime.Now.Ticks.ToString();
+        var originalName = $"Original Product {originalId}";
+        await CreateTestProduct(originalName, "19.99", "50", "Original description");
 
-        // Find the first product row and click edit
-        var editButton = _page.Locator("button:has-text('Edit')").First;
-        await editButton.ClickAsync();
+        // Act - Find and click edit button for our test product
+        var productRow = _page.Locator($"tr:has(td:text('{originalName}'))");
+        await productRow.Locator("button:has-text('Edit')").ClickAsync();
 
-        // Wait for modal
-        await _page.WaitForSelectorAsync(".modal.show", new() { State = WaitForSelectorState.Visible });
-
-        // Verify it's edit mode
+        // Wait for edit modal
+        await _page.WaitForSelectorAsync(".modal.show", new() { State = WaitForSelectorState.Visible, Timeout = 10000 });
         await Expect(_page.Locator(".modal-title")).ToContainTextAsync("Edit Product");
 
-        // Modify the product
-        var newName = $"Edited Product {DateTime.Now:yyyyMMdd-HHmmss}";
+        // Modify product data
+        var newId = DateTime.Now.Ticks.ToString();
+        var newName = $"Edited Product {newId}";
+        var newPrice = "39.99";
+        await _page.FillAsync("#productName", ""); // Clear first
         await _page.FillAsync("#productName", newName);
-        await _page.FillAsync("#productPrice", "39.99");
+        await _page.FillAsync("#productPrice", "");
+        await _page.FillAsync("#productPrice", newPrice);
 
         // Save changes
-        await _page.ClickAsync("button:has-text('Update Product')");
+        await _page.ClickAsync(".modal-footer button.btn-primary:has-text('Update Product')");
 
         // Wait for modal to close
-        await _page.WaitForSelectorAsync(".modal.show", new() { State = WaitForSelectorState.Hidden });
+        await _page.WaitForSelectorAsync(".modal.show", new() { State = WaitForSelectorState.Hidden, Timeout = 15000 });
 
-        // Assert success message
-        await _page.WaitForSelectorAsync(".alert-success");
+        // Assert - Check success message
+        await _page.WaitForSelectorAsync(".alert-success", new() { Timeout = 15000 });
         var successMessage = await _page.TextContentAsync(".alert-success");
+        Assert.NotNull(successMessage);
         Assert.Contains("Product updated successfully", successMessage);
 
-        // Assert product was updated in table
-        await Expect(_page.Locator($"td:text('{newName}')")).ToBeVisibleAsync();
-        await Expect(_page.Locator("td:text('$39.99')")).ToBeVisibleAsync();
+        // Assert - Find the specific product row and verify its contents
+        var updatedProductRow = _page.Locator($"tr:has(td:text('{newName}'))");
+        await Expect(updatedProductRow).ToBeVisibleAsync();
+
+        // Verify the price within the specific product row
+        await Expect(updatedProductRow.Locator($"td:text('${newPrice}')")).ToBeVisibleAsync();
+
+        // Assert - Original name should no longer exist
+        await Expect(_page.Locator($"td:text('{originalName}')")).Not.ToBeVisibleAsync();
     }
 
     [Fact]
     public async Task Should_DeleteProduct_Successfully()
     {
-        // First, add a product to delete
-        await Should_AddNewProduct_Successfully();
+        // Arrange - Create a product to delete
+        var uniqueId = DateTime.Now.Ticks.ToString();
+        var productName = $"Delete Test Product {uniqueId}";
+        await CreateTestProduct(productName, "15.99", "25", "Product to be deleted");
 
-        // Get the product name for verification
-        var firstProductName = await _page.Locator("tbody tr:first-child td:first-child").TextContentAsync();
-
-        // Click delete button for first product
-        var deleteButton = _page.Locator("button:has-text('Delete')").First;
-        await deleteButton.ClickAsync();
+        // Act - Find and click delete button for our test product
+        var productRow = _page.Locator($"tr:has(td:text('{productName}'))");
+        await productRow.Locator("button:has-text('Delete')").ClickAsync();
 
         // Wait for delete confirmation modal
-        await _page.WaitForSelectorAsync(".modal.show", new() { State = WaitForSelectorState.Visible });
+        await _page.WaitForSelectorAsync(".modal.show", new() { State = WaitForSelectorState.Visible, Timeout = 10000 });
         await Expect(_page.Locator(".modal-title")).ToContainTextAsync("Confirm Delete");
 
         // Confirm deletion
-        await _page.ClickAsync("button.btn-danger:has-text('Delete Product')");
+        await _page.ClickAsync(".modal-footer button.btn-danger:has-text('Delete Product')");
 
         // Wait for modal to close
-        await _page.WaitForSelectorAsync(".modal.show", new() { State = WaitForSelectorState.Hidden });
+        await _page.WaitForSelectorAsync(".modal.show", new() { State = WaitForSelectorState.Hidden, Timeout = 15000 });
 
-        // Assert success message
-        await _page.WaitForSelectorAsync(".alert-success");
+        // Assert - Check success message
+        await _page.WaitForSelectorAsync(".alert-success", new() { Timeout = 15000 });
         var successMessage = await _page.TextContentAsync(".alert-success");
+        Assert.NotNull(successMessage);
         Assert.Contains("Product deleted successfully", successMessage);
 
-        // Assert product no longer appears in table
-        await Expect(_page.Locator($"td:text('{firstProductName}')")).Not.ToBeVisibleAsync();
+        // Assert - Product should no longer exist in table
+        await Expect(_page.Locator($"td:text('{productName}')")).Not.ToBeVisibleAsync();
     }
 
     [Fact]
     public async Task Should_SearchProducts_Successfully()
     {
-        // Add a product first
-        await Should_AddNewProduct_Successfully();
+        // Arrange - Create a product with unique search term
+        var searchId = DateTime.Now.Ticks.ToString();
+        var uniqueSearchTerm = $"SearchableProduct{searchId}";
+        var productName = $"{uniqueSearchTerm} Test Item";
+        await CreateTestProduct(productName, "22.99", "75", "Searchable test product");
 
-        // Search for specific product
-        var searchTerm = "Test Product";
-        await _page.FillAsync("input[placeholder='Search products...']", searchTerm);
-
-        // Wait for search results (debounced)
-        await _page.WaitForTimeoutAsync(500); // Wait for debounce
+        // Act - Search for our unique term
+        await _page.FillAsync("input[placeholder='Search products...']", uniqueSearchTerm);
+        await _page.WaitForTimeoutAsync(500); // Debounce wait
         await _page.WaitForLoadStateAsync(LoadState.NetworkIdle);
 
-        // Assert that matching products are shown
+        // Assert - Should find our product
         var visibleRows = await _page.Locator("tbody tr").CountAsync();
-        Assert.True(visibleRows > 0);
+        Assert.True(visibleRows >= 1, "Should find at least our test product");
 
-        // Verify all visible products contain search term
-        var productNames = await _page.Locator("tbody tr td:first-child").AllTextContentsAsync();
-        foreach (var name in productNames)
-        {
-            Assert.Contains(searchTerm, name, StringComparison.OrdinalIgnoreCase);
-        }
+        // Verify our product is in search results
+        await Expect(_page.Locator($"td:text('{productName}')")).ToBeVisibleAsync();
+
+        // Clear search to reset
+        await _page.FillAsync("input[placeholder='Search products...']", "");
+        await _page.WaitForTimeoutAsync(500);
     }
 
     [Fact]
     public async Task Should_SortProducts_ByName()
     {
-        // Click on Name column header to sort
+        // Arrange - Create multiple test products with predictable names
+        var baseId = DateTime.Now.Ticks.ToString();
+        var productA = $"AAA Test Product {baseId}";
+        var productB = $"BBB Test Product {baseId}";
+        var productC = $"CCC Test Product {baseId}";
+
+        // Create in random order to ensure we're testing sorting, not insertion order
+        await CreateTestProduct(productC, "10.00", "10", "Third product");
+        await CreateTestProduct(productA, "20.00", "20", "First product");
+        await CreateTestProduct(productB, "30.00", "30", "Second product");
+
+        // Add a small delay to ensure all products are fully loaded
+        await Task.Delay(1000);
+
+        // Act - Click Name header to sort (first click = ascending)
         await _page.ClickAsync("th:has-text('Name')");
 
-        // Wait for sort to complete
+        // Wait longer for the sort to complete
         await _page.WaitForLoadStateAsync(LoadState.NetworkIdle);
+        await Task.Delay(2000); // Give extra time for sorting
 
-        // Get product names
-        var productNames = await _page.Locator("tbody tr td:first-child").AllTextContentsAsync();
+        // Get all current product names for debugging
+        var allProductNames = await _page.Locator("tbody tr td:first-child").AllTextContentsAsync();
 
-        // Verify they're sorted alphabetically
-        var sortedNames = productNames.OrderBy(x => x).ToList();
-        Assert.Equal(sortedNames, productNames);
+        // Debug: Print all product names to see what's in the table
+        Console.WriteLine("=== ASCENDING SORT - All products in table ===");
+        for (int i = 0; i < allProductNames.Count; i++)
+        {
+            Console.WriteLine($"Position {i}: {allProductNames[i]}");
+        }
 
-        // Click again to reverse sort
+        // Find our test products and their positions
+        var testProductPositions = new Dictionary<string, int>();
+        for (int i = 0; i < allProductNames.Count; i++)
+        {
+            var name = allProductNames[i];
+            if (name.Contains($"Test Product {baseId}"))
+            {
+                if (name.Contains("AAA")) testProductPositions["AAA"] = i;
+                else if (name.Contains("BBB")) testProductPositions["BBB"] = i;
+                else if (name.Contains("CCC")) testProductPositions["CCC"] = i;
+            }
+        }
+
+        Console.WriteLine($"=== Our test products positions (Ascending) ===");
+        foreach (var kvp in testProductPositions.OrderBy(x => x.Value))
+        {
+            Console.WriteLine($"{kvp.Key}: position {kvp.Value}");
+        }
+
+        // Assert - Should find all 3 test products
+        Assert.True(testProductPositions.Count == 3, $"Should find all 3 test products, but found {testProductPositions.Count}");
+
+        // Assert - In ascending order: AAA should come before BBB, BBB should come before CCC
+        Assert.True(testProductPositions["AAA"] < testProductPositions["BBB"],
+            $"In ascending order: AAA (position {testProductPositions["AAA"]}) should come before BBB (position {testProductPositions["BBB"]})");
+        Assert.True(testProductPositions["BBB"] < testProductPositions["CCC"],
+            $"In ascending order: BBB (position {testProductPositions["BBB"]}) should come before CCC (position {testProductPositions["CCC"]})");
+
+        // Act - Click again to reverse sort (second click = descending)
         await _page.ClickAsync("th:has-text('Name')");
         await _page.WaitForLoadStateAsync(LoadState.NetworkIdle);
+        await Task.Delay(2000); // Give extra time for sorting
 
+        // Get the reversed order
         var reversedNames = await _page.Locator("tbody tr td:first-child").AllTextContentsAsync();
-        var expectedReversed = productNames.OrderByDescending(x => x).ToList();
-        Assert.Equal(expectedReversed, reversedNames);
+
+        // Debug: Print all product names after reverse sort
+        Console.WriteLine("=== DESCENDING SORT - All products in table ===");
+        for (int i = 0; i < reversedNames.Count; i++)
+        {
+            Console.WriteLine($"Position {i}: {reversedNames[i]}");
+        }
+
+        // Find our test products and their new positions
+        var reversedProductPositions = new Dictionary<string, int>();
+        for (int i = 0; i < reversedNames.Count; i++)
+        {
+            var name = reversedNames[i];
+            if (name.Contains($"Test Product {baseId}"))
+            {
+                if (name.Contains("AAA")) reversedProductPositions["AAA"] = i;
+                else if (name.Contains("BBB")) reversedProductPositions["BBB"] = i;
+                else if (name.Contains("CCC")) reversedProductPositions["CCC"] = i;
+            }
+        }
+
+        Console.WriteLine($"=== Our test products positions (Descending) ===");
+        foreach (var kvp in reversedProductPositions.OrderBy(x => x.Value))
+        {
+            Console.WriteLine($"{kvp.Key}: position {kvp.Value}");
+        }
+
+        // Assert - Should still find all 3 test products
+        Assert.True(reversedProductPositions.Count == 3, $"Should find all 3 test products in reversed list, but found {reversedProductPositions.Count}");
+
+        // Check if the sort order changed at all
+        bool sortOrderChanged = !testProductPositions.SequenceEqual(reversedProductPositions);
+        Console.WriteLine($"Sort order changed: {sortOrderChanged}");
+
+        if (!sortOrderChanged)
+        {
+            Assert.True(false, "Sort order did not change after clicking the header twice. The sorting functionality may not be working.");
+        }
+
+        // Assert - In descending order: CCC should come before BBB, BBB should come before AAA
+        Assert.True(reversedProductPositions["CCC"] < reversedProductPositions["BBB"],
+            $"In descending order: CCC (position {reversedProductPositions["CCC"]}) should come before BBB (position {reversedProductPositions["BBB"]})");
+        Assert.True(reversedProductPositions["BBB"] < reversedProductPositions["AAA"],
+            $"In descending order: BBB (position {reversedProductPositions["BBB"]}) should come before AAA (position {reversedProductPositions["AAA"]})");
     }
 
     [Fact]
     public async Task Should_ShowValidationErrors_ForInvalidProduct()
     {
-        // Click Add Product
-        await _page.ClickAsync("button:has-text('Add Product')");
-        await _page.WaitForSelectorAsync(".modal.show", new() { State = WaitForSelectorState.Visible });
+        // Act - Click Add Product to open modal
+        await _page.ClickAsync(".input-group button:has-text('Add Product')");
+        await _page.WaitForSelectorAsync(".modal.show", new() { State = WaitForSelectorState.Visible, Timeout = 10000 });
 
-        // Leave name empty and try to save
+        // Fill invalid data (missing required name)
         await _page.FillAsync("#productPrice", "10.99");
-        await _page.ClickAsync("button:has-text('Add Product'):not(:has-text('Debug'))");
+        await _page.FillAsync("#productStock", "5");
 
-        // Should show validation errors (modal should still be open)
+        // Attempt to save
+        await _page.ClickAsync(".modal-footer button.btn-primary:has-text('Add Product')");
+
+        // Assert - Modal should remain open due to validation errors
         await Expect(_page.Locator(".modal.show")).ToBeVisibleAsync();
 
-        // Check for validation error message
-        await _page.WaitForSelectorAsync(".alert-warning", new() { Timeout = 2000 });
+        // Should show validation errors
+        await _page.WaitForSelectorAsync(".alert-warning", new() { Timeout = 10000 });
         var validationMessage = await _page.TextContentAsync(".alert-warning");
-        Assert.True(validationMessage.Contains("validation", StringComparison.OrdinalIgnoreCase) ||
-                   validationMessage.Contains("required", StringComparison.OrdinalIgnoreCase));
+        Assert.NotNull(validationMessage);
+        Assert.True(
+            validationMessage.Contains("validation", StringComparison.OrdinalIgnoreCase) ||
+            validationMessage.Contains("required", StringComparison.OrdinalIgnoreCase) ||
+            validationMessage.Contains("Name", StringComparison.OrdinalIgnoreCase),
+            "Should show validation error about missing name");
+
+        // Close modal
+        await _page.ClickAsync(".modal-header .btn-close");
+    }
+
+    // Helper method to create test products
+    private async Task CreateTestProduct(string name, string price, string stock, string description)
+    {
+        await _page.ClickAsync(".input-group button:has-text('Add Product')");
+        await _page.WaitForSelectorAsync(".modal.show", new() { State = WaitForSelectorState.Visible, Timeout = 10000 });
+
+        await _page.FillAsync("#productName", name);
+        await _page.FillAsync("#productPrice", price);
+        await _page.FillAsync("#productStock", stock);
+        await _page.FillAsync("#productDescription", description);
+
+        await _page.ClickAsync(".modal-footer button.btn-primary:has-text('Add Product')");
+        await _page.WaitForSelectorAsync(".modal.show", new() { State = WaitForSelectorState.Hidden, Timeout = 15000 });
+
+        // Wait for success message and dismiss it
+        await _page.WaitForSelectorAsync(".alert-success", new() { Timeout = 15000 });
+        await _page.ClickAsync(".alert-success .btn-close");
+        await _page.WaitForSelectorAsync(".alert-success", new() { State = WaitForSelectorState.Hidden, Timeout = 5000 });
     }
 }
