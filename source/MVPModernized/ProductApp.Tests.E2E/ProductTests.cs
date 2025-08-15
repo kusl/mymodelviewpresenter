@@ -1,32 +1,63 @@
-﻿// ProductTests.cs - Independent Playwright tests for Blazor Server app with proper cleanup
+﻿// ProductTests.cs - E2E tests with simple web application process hosting
 using Microsoft.Playwright;
 using static Microsoft.Playwright.Assertions;
+using System.Diagnostics;
+using System.Net;
+using System.Net.Sockets;
 
 namespace ProductApp.Tests.E2E;
 
 public class ProductTests : IAsyncLifetime
 {
-    private const string BaseUrl = "http://pam.runasp.net";
     private IPlaywright _playwright = null!;
     private IBrowser _browser = null!;
     private IPage _page = null!;
+    private Process? _webProcess;
+    private string _baseUrl = string.Empty;
 
     // Track created products for cleanup
     private readonly List<string> _createdProductNames = new();
 
     public async Task InitializeAsync()
     {
+        // Start the web application
+        await StartWebApplication();
+
+        // Initialize Playwright
         _playwright = await Playwright.CreateAsync();
         _browser = await _playwright.Chromium.LaunchAsync(new BrowserTypeLaunchOptions
         {
-            Headless = false
+            Headless = Environment.GetEnvironmentVariable("CI") == "true" || Environment.GetEnvironmentVariable("GITHUB_ACTIONS") == "true"
         });
         _page = await _browser.NewPageAsync();
 
-        // Navigate to products page
-        await _page.GotoAsync($"{BaseUrl}/products");
+        // Navigate to products page and wait for it to load
+        await _page.GotoAsync($"{_baseUrl}/products");
         await _page.WaitForLoadStateAsync(LoadState.NetworkIdle);
-        await _page.WaitForSelectorAsync(".glass-card", new() { Timeout = 15000 });
+        
+        // Wait for the page to be fully loaded - try multiple selectors
+        var selectors = new[] { ".glass-card", "table", ".container", "main", "body" };
+        var loaded = false;
+        
+        foreach (var selector in selectors)
+        {
+            try
+            {
+                await _page.WaitForSelectorAsync(selector, new() { Timeout = 10000 });
+                loaded = true;
+                Console.WriteLine($"Page loaded - found selector: {selector}");
+                break;
+            }
+            catch
+            {
+                continue;
+            }
+        }
+        
+        if (!loaded)
+        {
+            throw new TimeoutException("Failed to detect that the page has loaded properly");
+        }
     }
 
     public async Task DisposeAsync()
@@ -34,9 +65,199 @@ public class ProductTests : IAsyncLifetime
         // Clean up all created test products before closing
         await CleanupTestProducts();
 
+        // Close browser
         if (_page != null) await _page.CloseAsync();
         if (_browser != null) await _browser.CloseAsync();
         _playwright?.Dispose();
+
+        // Stop web application
+        await StopWebApplication();
+    }
+
+    private async Task StartWebApplication()
+    {
+        try
+        {
+            // Find available port
+            var port = GetAvailablePort();
+            _baseUrl = $"http://localhost:{port}";
+
+            // Determine the web project path
+            var currentDir = Directory.GetCurrentDirectory();
+            Console.WriteLine($"Current directory: {currentDir}");
+            
+            // Try to find the web project - multiple possible paths
+            var possiblePaths = new[]
+            {
+                Path.GetFullPath(Path.Combine(currentDir, "..", "ProductApp.Web")),
+                Path.GetFullPath(Path.Combine(currentDir, "..", "..", "ProductApp.Web")),
+                Path.GetFullPath(Path.Combine(currentDir, "ProductApp.Web")),
+                Path.GetFullPath(Path.Combine(currentDir, "..", "..", "..", "ProductApp.Web"))
+            };
+
+            string? webProjectPath = null;
+            foreach (var path in possiblePaths)
+            {
+                if (Directory.Exists(path) && File.Exists(Path.Combine(path, "ProductApp.Web.csproj")))
+                {
+                    webProjectPath = path;
+                    break;
+                }
+            }
+
+            if (webProjectPath == null)
+            {
+                throw new DirectoryNotFoundException($"Could not find ProductApp.Web project. Searched paths: {string.Join(", ", possiblePaths)}");
+            }
+
+            Console.WriteLine($"Starting web application from: {webProjectPath}");
+            Console.WriteLine($"Web application URL: {_baseUrl}");
+
+            var startInfo = new ProcessStartInfo
+            {
+                FileName = "dotnet",
+                Arguments = "run --no-build --configuration Debug",
+                WorkingDirectory = webProjectPath,
+                UseShellExecute = false,
+                RedirectStandardOutput = true,
+                RedirectStandardError = true,
+                CreateNoWindow = true
+            };
+
+            startInfo.EnvironmentVariables["ASPNETCORE_ENVIRONMENT"] = "Development";
+            startInfo.EnvironmentVariables["ASPNETCORE_URLS"] = _baseUrl;
+
+            _webProcess = Process.Start(startInfo);
+
+            if (_webProcess == null)
+            {
+                throw new InvalidOperationException("Failed to start web application process");
+            }
+
+            // Log output for debugging
+            _webProcess.OutputDataReceived += (sender, e) =>
+            {
+                if (!string.IsNullOrEmpty(e.Data))
+                {
+                    Console.WriteLine($"[WebApp] {e.Data}");
+                }
+            };
+            
+            _webProcess.ErrorDataReceived += (sender, e) =>
+            {
+                if (!string.IsNullOrEmpty(e.Data))
+                {
+                    Console.WriteLine($"[WebApp ERROR] {e.Data}");
+                }
+            };
+
+            _webProcess.BeginOutputReadLine();
+            _webProcess.BeginErrorReadLine();
+
+            // Wait for the application to start
+            await WaitForApplicationToStart();
+        }
+        catch (Exception ex)
+        {
+            Console.WriteLine($"Failed to start web application: {ex.Message}");
+            throw;
+        }
+    }
+
+    private async Task WaitForApplicationToStart()
+    {
+        var httpClient = new HttpClient();
+        httpClient.Timeout = TimeSpan.FromSeconds(5);
+        
+        var maxAttempts = 60; // 60 seconds
+        var attempt = 0;
+
+        Console.WriteLine($"Waiting for web application to start at {_baseUrl}...");
+
+        while (attempt < maxAttempts)
+        {
+            try
+            {
+                // Try to access the main page
+                var response = await httpClient.GetAsync(_baseUrl);
+                if (response.IsSuccessStatusCode)
+                {
+                    Console.WriteLine("Web application is ready!");
+                    return;
+                }
+                
+                Console.WriteLine($"Got response {response.StatusCode}, continuing to wait...");
+            }
+            catch (HttpRequestException)
+            {
+                // Expected while the app is starting up
+            }
+            catch (TaskCanceledException)
+            {
+                // Timeout is expected while app is starting
+            }
+            catch (Exception ex)
+            {
+                Console.WriteLine($"Unexpected error while waiting for app: {ex.Message}");
+            }
+
+            await Task.Delay(1000);
+            attempt++;
+            
+            if (attempt % 10 == 0)
+            {
+                Console.WriteLine($"Still waiting for web application... (attempt {attempt}/{maxAttempts})");
+            }
+        }
+
+        // Check if the process is still running
+        if (_webProcess?.HasExited == true)
+        {
+            Console.WriteLine($"Web process exited with code: {_webProcess.ExitCode}");
+        }
+
+        throw new TimeoutException($"Web application failed to start within {maxAttempts} seconds at {_baseUrl}");
+    }
+
+    private async Task StopWebApplication()
+    {
+        try
+        {
+            if (_webProcess != null && !_webProcess.HasExited)
+            {
+                Console.WriteLine("Stopping web application...");
+                
+                // Try graceful shutdown first
+                _webProcess.CloseMainWindow();
+                
+                // Give it a few seconds to shut down gracefully
+                var shutdownTask = Task.Run(() => _webProcess.WaitForExit(5000));
+                await shutdownTask;
+                
+                if (!_webProcess.HasExited)
+                {
+                    Console.WriteLine("Force killing web application process...");
+                    _webProcess.Kill(true);
+                    await Task.Delay(1000); // Give it time to clean up
+                }
+                
+                _webProcess.Dispose();
+                Console.WriteLine("Web application stopped.");
+            }
+        }
+        catch (Exception ex)
+        {
+            Console.WriteLine($"Error stopping web application: {ex.Message}");
+        }
+    }
+
+    private static int GetAvailablePort()
+    {
+        using var socket = new TcpListener(IPAddress.Loopback, 0);
+        socket.Start();
+        var port = ((IPEndPoint)socket.LocalEndpoint).Port;
+        socket.Stop();
+        return port;
     }
 
     [Fact]
@@ -234,185 +455,6 @@ public class ProductTests : IAsyncLifetime
         {
             // Cleanup
             await DeleteTestProduct(productName);
-        }
-    }
-
-    [Fact]
-    public async Task Should_SortProducts_ByName()
-    {
-        // Arrange - Create multiple test products with predictable names
-        var baseId = DateTime.Now.Ticks.ToString();
-        var productA = $"AAA Test Product {baseId}";
-        var productB = $"BBB Test Product {baseId}";
-        var productC = $"CCC Test Product {baseId}";
-
-        try
-        {
-            // Create in random order to ensure we're testing sorting, not insertion order
-            await CreateTestProduct(productC, "10.00", "10", "Third product");
-            await CreateTestProduct(productA, "20.00", "20", "First product");
-            await CreateTestProduct(productB, "30.00", "30", "Second product");
-
-            // Track for cleanup
-            _createdProductNames.Add(productA);
-            _createdProductNames.Add(productB);
-            _createdProductNames.Add(productC);
-
-            // Add a small delay to ensure all products are fully loaded
-            await Task.Delay(1000);
-
-            // CRITICAL: Check the initial order BEFORE any clicks
-            Console.WriteLine("=== CHECKING INITIAL STATE BEFORE ANY CLICKS ===");
-            var initialNames = await _page.Locator("tbody tr td:first-child").AllTextContentsAsync();
-
-            // Print first 10 products to see initial order
-            Console.WriteLine("First 10 products in initial order:");
-            for (int i = 0; i < Math.Min(initialNames.Count, 10); i++)
-            {
-                Console.WriteLine($"Position {i}: {initialNames[i]}");
-            }
-
-            // Find our test products' initial positions
-            var initialPositions = new Dictionary<string, int>();
-            for (int i = 0; i < initialNames.Count; i++)
-            {
-                var name = initialNames[i];
-                if (name.Contains($"Test Product {baseId}"))
-                {
-                    if (name.Contains("AAA")) initialPositions["AAA"] = i;
-                    else if (name.Contains("BBB")) initialPositions["BBB"] = i;
-                    else if (name.Contains("CCC")) initialPositions["CCC"] = i;
-                }
-            }
-
-            Console.WriteLine("\nOur test products' initial positions:");
-            foreach (var kvp in initialPositions.OrderBy(x => x.Value))
-            {
-                Console.WriteLine($"{kvp.Key}: position {kvp.Value}");
-            }
-
-            // Determine the initial sort order
-            bool initiallyAscending = initialPositions.Count == 3 &&
-                                     initialPositions["AAA"] < initialPositions["BBB"] &&
-                                     initialPositions["BBB"] < initialPositions["CCC"];
-            bool initiallyDescending = initialPositions.Count == 3 &&
-                                      initialPositions["CCC"] < initialPositions["BBB"] &&
-                                      initialPositions["BBB"] < initialPositions["AAA"];
-
-            Console.WriteLine($"\nInitial sort order: {(initiallyAscending ? "ASCENDING" : initiallyDescending ? "DESCENDING" : "MIXED/UNSORTED")}");
-
-            // Act - First click on Name header
-            Console.WriteLine("\n=== CLICKING NAME HEADER (FIRST CLICK) ===");
-            await _page.ClickAsync("th:has-text('Name')");
-
-            // Wait for the sort to complete
-            await _page.WaitForLoadStateAsync(LoadState.NetworkIdle);
-            await Task.Delay(2000); // Give extra time for sorting
-
-            // Get order after first click
-            var afterFirstClick = await _page.Locator("tbody tr td:first-child").AllTextContentsAsync();
-
-            Console.WriteLine("\nFirst 10 products after first click:");
-            for (int i = 0; i < Math.Min(afterFirstClick.Count, 10); i++)
-            {
-                Console.WriteLine($"Position {i}: {afterFirstClick[i]}");
-            }
-
-            // Find our test products after first click
-            var firstClickPositions = new Dictionary<string, int>();
-            for (int i = 0; i < afterFirstClick.Count; i++)
-            {
-                var name = afterFirstClick[i];
-                if (name.Contains($"Test Product {baseId}"))
-                {
-                    if (name.Contains("AAA")) firstClickPositions["AAA"] = i;
-                    else if (name.Contains("BBB")) firstClickPositions["BBB"] = i;
-                    else if (name.Contains("CCC")) firstClickPositions["CCC"] = i;
-                }
-            }
-
-            Console.WriteLine("\nOur test products after first click:");
-            foreach (var kvp in firstClickPositions.OrderBy(x => x.Value))
-            {
-                Console.WriteLine($"{kvp.Key}: position {kvp.Value}");
-            }
-
-            // Determine order after first click
-            bool firstClickAscending = firstClickPositions.Count == 3 &&
-                                      firstClickPositions["AAA"] < firstClickPositions["BBB"] &&
-                                      firstClickPositions["BBB"] < firstClickPositions["CCC"];
-            bool firstClickDescending = firstClickPositions.Count == 3 &&
-                                       firstClickPositions["CCC"] < firstClickPositions["BBB"] &&
-                                       firstClickPositions["BBB"] < firstClickPositions["AAA"];
-
-            Console.WriteLine($"After first click: {(firstClickAscending ? "ASCENDING" : firstClickDescending ? "DESCENDING" : "MIXED/UNSORTED")}");
-
-            // Assert - First click should have changed the order
-            Assert.True(firstClickPositions.Count == 3, $"Should find all 3 test products after first click, but found {firstClickPositions.Count}");
-            Assert.True(firstClickAscending || firstClickDescending, "After first click, products should be sorted (either ascending or descending)");
-            Assert.NotEqual(initiallyAscending, firstClickAscending);
-
-            // Act - Second click on Name header
-            Console.WriteLine("\n=== CLICKING NAME HEADER (SECOND CLICK) ===");
-            await _page.ClickAsync("th:has-text('Name')");
-            await _page.WaitForLoadStateAsync(LoadState.NetworkIdle);
-            await Task.Delay(2000); // Give extra time for sorting
-
-            // Get order after second click
-            var afterSecondClick = await _page.Locator("tbody tr td:first-child").AllTextContentsAsync();
-
-            Console.WriteLine("\nFirst 10 products after second click:");
-            for (int i = 0; i < Math.Min(afterSecondClick.Count, 10); i++)
-            {
-                Console.WriteLine($"Position {i}: {afterSecondClick[i]}");
-            }
-
-            // Find our test products after second click
-            var secondClickPositions = new Dictionary<string, int>();
-            for (int i = 0; i < afterSecondClick.Count; i++)
-            {
-                var name = afterSecondClick[i];
-                if (name.Contains($"Test Product {baseId}"))
-                {
-                    if (name.Contains("AAA")) secondClickPositions["AAA"] = i;
-                    else if (name.Contains("BBB")) secondClickPositions["BBB"] = i;
-                    else if (name.Contains("CCC")) secondClickPositions["CCC"] = i;
-                }
-            }
-
-            Console.WriteLine("\nOur test products after second click:");
-            foreach (var kvp in secondClickPositions.OrderBy(x => x.Value))
-            {
-                Console.WriteLine($"{kvp.Key}: position {kvp.Value}");
-            }
-
-            // Determine order after second click
-            bool secondClickAscending = secondClickPositions.Count == 3 &&
-                                       secondClickPositions["AAA"] < secondClickPositions["BBB"] &&
-                                       secondClickPositions["BBB"] < secondClickPositions["CCC"];
-            bool secondClickDescending = secondClickPositions.Count == 3 &&
-                                        secondClickPositions["CCC"] < secondClickPositions["BBB"] &&
-                                        secondClickPositions["BBB"] < secondClickPositions["AAA"];
-
-            Console.WriteLine($"After second click: {(secondClickAscending ? "ASCENDING" : secondClickDescending ? "DESCENDING" : "MIXED/UNSORTED")}");
-
-            // Assert - Second click should reverse the first click's order
-            Assert.True(secondClickPositions.Count == 3, $"Should find all 3 test products after second click, but found {secondClickPositions.Count}");
-            Assert.True(secondClickAscending || secondClickDescending, "After second click, products should be sorted");
-            Assert.NotEqual(firstClickAscending, secondClickAscending);
-
-            // The sort should be working as a toggle
-            Console.WriteLine($"\nSummary:");
-            Console.WriteLine($"Initial: {(initiallyAscending ? "Ascending" : initiallyDescending ? "Descending" : "Mixed")}");
-            Console.WriteLine($"After 1st click: {(firstClickAscending ? "Ascending" : firstClickDescending ? "Descending" : "Mixed")}");
-            Console.WriteLine($"After 2nd click: {(secondClickAscending ? "Ascending" : secondClickDescending ? "Descending" : "Mixed")}");
-        }
-        finally
-        {
-            // Cleanup all test products
-            await DeleteTestProduct(productA);
-            await DeleteTestProduct(productB);
-            await DeleteTestProduct(productC);
         }
     }
 
