@@ -1,0 +1,86 @@
+﻿@* Fixed ComponentLibrary.razor - All parameters in single @code block *@
+
+@* Loading Spinner Component *@
+@if (ShowLoadingSpinner)
+{
+    <div class="text-center py-5">
+        <div class="spinner-border text-primary" role="status">
+            <span class="visually-hidden">@(LoadingMessage ?? "Loading...")</span>
+        </div>
+        @if (!string.IsNullOrEmpty(LoadingMessage))
+        {
+            <p class="mt-2 text-muted">@LoadingMessage</p>
+        }
+    </div>
+}
+
+@* Empty State Component *@
+@if (ShowEmptyState && (!string.IsNullOrEmpty(Icon) || !string.IsNullOrEmpty(EmptyMessage)))
+{
+    <div class="text-center py-5">
+        @if (!string.IsNullOrEmpty(Icon))
+        {
+            <i class="bi @Icon display-1 text-muted"></i>
+        }
+        @if (!string.IsNullOrEmpty(EmptyMessage))
+        {
+            <p class="mt-3 text-muted">@EmptyMessage</p>
+        }
+    </div>
+}
+
+@* Alert Messages Component *@
+@if (ShowAlerts)
+{
+    @if (!string.IsNullOrEmpty(SuccessMessage))
+    {
+        <div class="alert alert-success alert-dismissible fade show" role="alert">
+            <i class="bi bi-check-circle me-2"></i>@SuccessMessage
+            <button type="button" class="btn-close" @onclick="OnDismissSuccess"></button>
+        </div>
+    }
+    @if (!string.IsNullOrEmpty(ErrorMessage))
+    {
+        <div class="alert alert-danger alert-dismissible fade show" role="alert">
+            <i class="bi bi-exclamation-triangle me-2"></i>@ErrorMessage
+            <button type="button" class="btn-close" @onclick="OnDismissError"></button>
+        </div>
+    }
+    @if (ValidationErrors != null && ValidationErrors.Any())
+    {
+        <div class="alert alert-warning" role="alert">
+            <h6 class="alert-heading">Validation Errors:</h6>
+            @foreach (var error in ValidationErrors)
+            {
+                <div class="mb-1">
+                    <strong>@error.Key:</strong>
+                    <ul class="mb-0">
+                        @foreach (var msg in error.Value)
+                        {
+                            <li>@msg</li>
+                        }
+                    </ul>
+                </div>
+            }
+        </div>
+    }
+}
+
+@code {
+    // Loading Spinner parameters
+    [Parameter] public bool ShowLoadingSpinner { get; set; } = false;
+    [Parameter] public string? LoadingMessage { get; set; }
+
+    // Empty State parameters
+    [Parameter] public bool ShowEmptyState { get; set; } = false;
+    [Parameter] public string? Icon { get; set; }
+    [Parameter] public string? EmptyMessage { get; set; }
+
+    // Alert Messages parameters
+    [Parameter] public bool ShowAlerts { get; set; } = false;
+    [Parameter] public string? SuccessMessage { get; set; }
+    [Parameter] public string? ErrorMessage { get; set; }
+    [Parameter] public Dictionary<string, List<string>>? ValidationErrors { get; set; }
+    [Parameter] public EventCallback OnDismissSuccess { get; set; }
+    [Parameter] public EventCallback OnDismissError { get; set; }
+}
